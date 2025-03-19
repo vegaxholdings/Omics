@@ -22,3 +22,7 @@ python main.py evaluate --stage 1 \
     --batch_size 2 \
     --gpu_id 0
 ```
+
+```
+tensorboard --logdir ./archive/metrics/stage1
+```
