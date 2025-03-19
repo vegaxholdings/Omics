@@ -4,6 +4,7 @@ import logging
 import json
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from torch.utils.data import DataLoader
+from peft import PeftModel, PeftConfig
 from .data import SequenceDataset
 
 logger = logging.getLogger(__name__)
@@ -21,18 +22,33 @@ def evaluate(args):
     
     # 메모리 캐시 정리
     torch.cuda.empty_cache()
+
+    # PEFT 구성 로드
+    try:
+        peft_config = PeftConfig.from_pretrained(args.model_dir)
+        base_model_path = peft_config.base_model_name_or_path
+        logger.info(f"Found PEFT config. Base model path: {base_model_path}")
+    except:
+        # PEFT 구성을 찾을 수 없는 경우 기본 가정
+        base_model_path = "./Meta-Llama-3.1-8B"
+        logger.warning(f"Could not find PEFT config. Using default base model path: {base_model_path}")
     
-    # 토크나이저 로드
-    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
+    # 토크나이저 로드 - 원래 기본 모델에서
+    logger.info(f"Loading tokenizer from {base_model_path}")
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     tokenizer.pad_token = tokenizer.eos_token
     
-    # 모델 로드
-    logger.info(f"Loading model from {args.model_dir}")
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_dir,
+    # 기본 모델 로드
+    logger.info(f"Loading base model from {base_model_path}")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
     )
+    
+    # 어댑터 로드 및 적용
+    logger.info(f"Loading adapter from {args.model_dir}")
+    model = PeftModel.from_pretrained(base_model, args.model_dir)
     
     # 모델을 GPU로 이동
     if torch.cuda.is_available():
@@ -43,7 +59,7 @@ def evaluate(args):
     val_dataset = SequenceDataset(
         file_path=args.val_file,
         tokenizer=tokenizer,
-        max_length=args.max_seq_length,
+        max_length=args.max_seq_length if hasattr(args, 'max_seq_length') else 1200,
         use_packing=False
     )
     

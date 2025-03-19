@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 import logging
 import time
@@ -162,7 +163,6 @@ def train(args):
         lr_scheduler_type="cosine",
         logging_dir=metrics_dir,
         logging_steps=args.logging_steps,
-        eval_strategy="epoch",
         evaluation_strategy="epoch",
         save_strategy="epoch",
         fp16=False,
@@ -216,7 +216,18 @@ def train(args):
         # 최종 모델 저장
         logger.info(f"Saving final model to {output_dir}")
         trainer.save_model()
-        
+
+        # 토크나이저 저장
+        tokenizer.save_pretrained(output_dir)
+
+        # 로라 설정 저장 - 수정된 부분
+        logger.info(f"Saving LoRA configuration to {output_dir}")
+        model.peft_config[model.active_adapter].save_pretrained(output_dir)
+
+        # 원본 모델 경로 저장
+        with open(os.path.join(output_dir, "base_model_path.txt"), "w") as f:
+            f.write(args.model_dir)
+
     except Exception as e:
         logger.error(f"Error during training: {e}")
         # 에러 발생 시 메모리 상태 기록

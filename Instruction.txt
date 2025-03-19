@@ -9,7 +9,7 @@
   Memory: 384 GiB
   Network Bandwidth: 100 Gbps
 
-  - 머신 리소스를 최대한 활용해. 모델을 학습할때는 4개의 고성능 GPU를 모두 사용해야 해.
+  - 반드시 단일 GPU를 사용해. 병렬 GPU 사용은 안전하지 않아.
 
 [Role]
   첨부된 논문에서 연구진은 LLM에 생물 분자 패턴을 학습시키는 방법을 연구한 결과로 ChatMultiOmics라는 분자생물학 특화 LLM을 만들었어.
