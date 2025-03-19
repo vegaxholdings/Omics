@@ -10,7 +10,7 @@ python main.py train --stage 1 \
     --lora_r 128 \
     --lora_alpha 32 \
     --max_seq_length 1200 \
-    --num_epochs 1 \
+    --num_epochs 10 \
     --gpu_id 0
 ```
 
