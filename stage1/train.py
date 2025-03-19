@@ -61,10 +61,11 @@ def train(args):
         args.model_dir,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
-        # Flash Attention 2 - 올바른 파라미터 사용
-        attn_implementation="flash_attention_2" if torch.cuda.is_available() else None,
+        device_map="auto",
+        attn_implementation="flash_attention_2"
     )
-    
+    model.gradient_checkpointing_enable()
+
     # FlashAttention-2 활성화
     if torch.cuda.is_available():
         torch.backends.cuda.enable_flash_sdp(True)
