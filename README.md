@@ -24,5 +24,5 @@ python main.py evaluate --stage 1 \
 ```
 
 ```
-tensorboard --logdir ./archive/metrics/stage1
+tensorboard --logdir ./archive/metrics/stage1 --host 0.0.0.0
 ```
