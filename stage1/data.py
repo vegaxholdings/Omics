@@ -1,8 +1,9 @@
-import torch
-from torch.utils.data import Dataset
+import random
 import logging
 from typing import Dict, List
-import random
+
+import torch
+from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
 

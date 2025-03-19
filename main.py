@@ -1,7 +1,7 @@
-import argparse
 import os
 import sys
 import logging
+import argparse
 from pathlib import Path
 
 # 로깅 설정
@@ -39,12 +39,11 @@ def main():
     train_parser.add_argument("--tokens_per_batch", type=int, default=2048, help="Maximum tokens per batch for packing")
     train_parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use for training")
     
-    # Stage1 evaluate parser
+    # Stage1 evaluate parser - 모델 평가를 위해 target_model 사용
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate the model")
     eval_parser.add_argument("--stage", type=int, required=True, choices=[1, 2, 3], help="Evaluation stage")
-    eval_parser.add_argument("--model_dir", type=str, required=True, help="Path to model directory")
+    eval_parser.add_argument("--target_model", type=str, required=True, help="Name of the trained model directory to evaluate (e.g., 2025-03-19T07:24:24)")
     eval_parser.add_argument("--val_file", type=str, required=True, help="Path to validation file")
-    eval_parser.add_argument("--output_dir", type=str, default="./archive/metrics/stage1", help="Output directory for evaluation results")
     eval_parser.add_argument("--batch_size", type=int, default=2, help="Batch size")
     eval_parser.add_argument("--max_seq_length", type=int, default=1200, help="Maximum sequence length")
     eval_parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use for evaluation")
@@ -55,7 +54,7 @@ def main():
     for directory in ["./archive/models/stage1", "./archive/metrics/stage1", 
                      "./archive/models/stage2", "./archive/metrics/stage2",
                      "./archive/models/stage3", "./archive/metrics/stage3"]:
-        os.makedirs(directory, exist_ok=True)
+        Path(directory).mkdir(parents=True, exist_ok=True)
     
     # 명령어가 지정되지 않은 경우 도움말 출력
     if args.command is None:
@@ -76,7 +75,19 @@ def main():
             train_stage1(args)
         
         elif args.command == "evaluate":
-            logger.info(f"Starting Stage 1 evaluation with model: {args.model_dir}")
+            # target_model 기반으로 모델 및 결과 디렉토리 경로 생성
+            model_dir = Path(f"./archive/models/stage{args.stage}/{args.target_model}")
+            output_dir = Path(f"./archive/metrics/stage{args.stage}/{args.target_model}")
+            
+            if not model_dir.exists():
+                logger.error(f"Model directory {model_dir} does not exist.")
+                sys.exit(1)
+                
+            # args 객체 수정
+            args.model_dir = str(model_dir)
+            args.output_dir = str(output_dir)
+            
+            logger.info(f"Starting Stage {args.stage} evaluation with model: {args.model_dir}")
             evaluate_stage1(args)
     
     # 향후 Stage2, Stage3 추가 예정

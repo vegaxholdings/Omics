@@ -1,8 +1,12 @@
 import os
-import json
-import torch
-import logging
 import time
+import logging
+from pathlib import Path
+from datetime import datetime
+
+import torch
+from torch.utils.tensorboard import SummaryWriter
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForCausalLM, 
     AutoTokenizer,
@@ -10,9 +14,8 @@ from transformers import (
     TrainingArguments,
     DataCollatorForLanguageModeling,
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from torch.utils.tensorboard import SummaryWriter
-from .data import SequenceDataset
+
+from stage1.data import SequenceDataset
 
 # 메모리 단편화 방지 환경 변수 설정
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -28,14 +31,27 @@ def train(args):
         level=logging.INFO,
     )
     
-    # 출력 디렉토리 설정
-    output_dir = args.output_dir
-    metrics_dir = output_dir.replace("models", "metrics")
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(metrics_dir, exist_ok=True)
+    # 고유 실행 ID 생성 - 시간만 사용, ISO 형식 그대로 유지
+    time_s = datetime.now().isoformat().split(".")[0]  # 실행시간 (예: 2025-03-19T07:24:24)
+    run_id = time_s
+    
+    # 출력 디렉토리 설정 - 경로 수정
+    base_output_dir = Path(args.output_dir)
+    base_metrics_dir = Path(str(base_output_dir).replace("models", "metrics"))
+    
+    # stage1/시간ID 디렉토리 생성
+    output_dir = base_output_dir / run_id
+    metrics_dir = base_metrics_dir / run_id
+    
+    # 디렉토리 생성
+    output_dir.mkdir(parents=True, exist_ok=True)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Models will be saved to: {output_dir}")
+    logger.info(f"Metrics will be saved to: {metrics_dir}")
     
     # TensorBoard 설정
-    writer = SummaryWriter(log_dir=metrics_dir)
+    writer = SummaryWriter(log_dir=str(metrics_dir))
     
     # 시드 설정
     torch.manual_seed(args.seed)
@@ -151,7 +167,7 @@ def train(args):
     
     # 훈련 설정 - 단순화
     training_args = TrainingArguments(
-        output_dir=output_dir,
+        output_dir=str(output_dir),
         overwrite_output_dir=True,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=1,  # 메모리 문제 방지를 위해 1로 설정
@@ -161,7 +177,7 @@ def train(args):
         weight_decay=0.01,
         warmup_ratio=0.1,
         lr_scheduler_type="cosine",
-        logging_dir=metrics_dir,
+        logging_dir=str(metrics_dir),
         logging_steps=args.logging_steps,
         evaluation_strategy="epoch",
         save_strategy="epoch",
@@ -210,24 +226,22 @@ def train(args):
         training_time = end_time - start_time
         
         # 훈련 시간 기록
-        with open(os.path.join(metrics_dir, "training_time.txt"), "w") as f:
-            f.write(f"Training time: {training_time} seconds\n")
+        (metrics_dir / "training_time.txt").write_text(f"Training time: {training_time} seconds\n")
         
         # 최종 모델 저장
         logger.info(f"Saving final model to {output_dir}")
         trainer.save_model()
-
+        
         # 토크나이저 저장
-        tokenizer.save_pretrained(output_dir)
-
-        # 로라 설정 저장 - 수정된 부분
+        tokenizer.save_pretrained(str(output_dir))
+        
+        # 로라 설정 저장
         logger.info(f"Saving LoRA configuration to {output_dir}")
-        model.peft_config[model.active_adapter].save_pretrained(output_dir)
-
+        model.peft_config[model.active_adapter].save_pretrained(str(output_dir))
+        
         # 원본 모델 경로 저장
-        with open(os.path.join(output_dir, "base_model_path.txt"), "w") as f:
-            f.write(args.model_dir)
-
+        (output_dir / "base_model_path.txt").write_text(args.model_dir)
+        
     except Exception as e:
         logger.error(f"Error during training: {e}")
         # 에러 발생 시 메모리 상태 기록
@@ -241,10 +255,13 @@ def train(args):
         torch.cuda.empty_cache()
     
     # 메트릭 저장
-    with open(os.path.join(metrics_dir, "training_args.txt"), "w") as f:
+    with (metrics_dir / "training_args.txt").open('w') as f:
         for arg, value in vars(args).items():
             f.write(f"{arg}: {value}\n")
     
-    logger.info("Training completed!")
+    # 실행 ID 저장
+    (metrics_dir / "run_id.txt").write_text(f"Run ID: {run_id}\n")
+    
+    logger.info(f"Training completed! Run ID: {run_id}")
     
     return model

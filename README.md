@@ -11,15 +11,14 @@ python main.py train --stage 1 \
     --lora_alpha 32 \
     --max_seq_length 1200 \
     --num_epochs 1 \
-    --gpu_id 0  # 사용할 GPU ID 지정
+    --gpu_id 0
 ```
 
 
 ```
 python main.py evaluate --stage 1 \
-    --model_dir ./archive/models/stage1 \
+    --target_model 2025-03-19T07:52:37 \
     --val_file data/stage1/validation.txt \
-    --output_dir ./archive/metrics/stage1 \
     --batch_size 2 \
-    --gpu_id 0  # 사용할 GPU ID 지정
+    --gpu_id 0
 ```

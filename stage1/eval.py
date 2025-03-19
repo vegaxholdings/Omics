@@ -1,11 +1,13 @@
-import os
-import torch
-import logging
 import json
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import logging
+from pathlib import Path
+
+import torch
 from torch.utils.data import DataLoader
 from peft import PeftModel, PeftConfig
-from .data import SequenceDataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from stage1.data import SequenceDataset
 
 logger = logging.getLogger(__name__)
 
@@ -17,21 +19,34 @@ def evaluate(args):
         level=logging.INFO,
     )
     
-    # 출력 디렉토리 설정
-    os.makedirs(args.output_dir, exist_ok=True)
+    # 경로 설정
+    model_dir = Path(args.model_dir)
+    metrics_dir = Path(args.output_dir)
+    
+    # 디렉토리 생성
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Evaluating model from: {model_dir}")
+    logger.info(f"Evaluation results will be saved to: {metrics_dir}")
     
     # 메모리 캐시 정리
     torch.cuda.empty_cache()
-
+    
     # PEFT 구성 로드
     try:
-        peft_config = PeftConfig.from_pretrained(args.model_dir)
+        peft_config = PeftConfig.from_pretrained(model_dir)
         base_model_path = peft_config.base_model_name_or_path
         logger.info(f"Found PEFT config. Base model path: {base_model_path}")
     except:
-        # PEFT 구성을 찾을 수 없는 경우 기본 가정
-        base_model_path = "./Meta-Llama-3.1-8B"
-        logger.warning(f"Could not find PEFT config. Using default base model path: {base_model_path}")
+        # PEFT 구성을 찾을 수 없는 경우, base_model_path.txt를 확인
+        base_model_path_file = model_dir / "base_model_path.txt"
+        if base_model_path_file.exists():
+            base_model_path = base_model_path_file.read_text().strip()
+            logger.info(f"Found base model path from file: {base_model_path}")
+        else:
+            # 그래도 없으면 기본 가정
+            base_model_path = "./Meta-Llama-3.1-8B"
+            logger.warning(f"Could not find base model path. Using default: {base_model_path}")
     
     # 토크나이저 로드 - 원래 기본 모델에서
     logger.info(f"Loading tokenizer from {base_model_path}")
@@ -47,8 +62,8 @@ def evaluate(args):
     )
     
     # 어댑터 로드 및 적용
-    logger.info(f"Loading adapter from {args.model_dir}")
-    model = PeftModel.from_pretrained(base_model, args.model_dir)
+    logger.info(f"Loading adapter from {model_dir}")
+    model = PeftModel.from_pretrained(base_model, model_dir)
     
     # 모델을 GPU로 이동
     if torch.cuda.is_available():
@@ -104,12 +119,26 @@ def evaluate(args):
     metrics = {
         "loss": avg_loss,
         "perplexity": perplexity,
+        "evaluated_model": str(model_dir.name)
     }
     
-    with open(os.path.join(args.output_dir, "eval_results.json"), "w") as f:
+    # JSON으로 메트릭 저장
+    metrics_file = metrics_dir / "eval_results.json"
+    with metrics_file.open('w') as f:
         json.dump(metrics, f, indent=2)
+    
+    # 평가 결과 요약 저장
+    summary_file = metrics_dir / "evaluation_summary.txt"
+    with summary_file.open('w') as f:
+        f.write(f"Model evaluated: {model_dir}\n")
+        f.write(f"Loss: {avg_loss}\n")
+        f.write(f"Perplexity: {perplexity}\n")
+        f.write(f"Validation file: {args.val_file}\n")
+        f.write(f"Batch size: {args.batch_size}\n")
     
     # 메모리 정리
     torch.cuda.empty_cache()
+    
+    logger.info(f"Evaluation results saved to {metrics_dir}")
     
     return metrics
