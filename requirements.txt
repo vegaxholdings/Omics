@@ -10,3 +10,4 @@ tqdm==4.66.1
 mpi4py==4.0.3
 standard-imghdr==3.13.0
 flash-attn
+scikit-learn==1.6.1
