@@ -1,4 +1,5 @@
-# stage2/eval.py
+# stage2/eval.py (수정된 코드)
+import re
 import json
 import logging
 from pathlib import Path
@@ -110,10 +111,17 @@ def evaluate(args):
     with torch.no_grad():
         for batch in val_dataloader:
             batch = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            outputs = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
-            preds = outputs.logits.argmax(dim=-1)
-            decoded_preds = [tokenizer.decode(pred, skip_special_tokens=True) for pred in preds]
-            numeric_preds = [float(pred.split()[-1]) if pred.split()[-1].replace(".", "").isdigit() else 1 if "yes" in pred.lower() else 0 for pred in decoded_preds]
+            # 모델이 순차적으로 응답을 생성하도록 generate() 함수 사용
+            generated_ids = model.generate(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"]            
+            )
+            decoded_preds = [tokenizer.decode(ids, skip_special_tokens=True) for ids in generated_ids]
+            # 숫자 추출 로직 유지
+            numeric_preds = []
+            for pred in decoded_preds:
+                match = re.search(r'\d+\.?\d*', pred)  # 첫 번째 정수 또는 소수를 찾음
+                numeric_preds.append(float(match.group()) if match else 0.0)
             
             predictions.extend(numeric_preds)
             labels.extend(batch["label"])
