@@ -27,6 +27,7 @@ def main():
     train_parser.add_argument("--lora_dropout", type=float, default=0.1, help="LoRA dropout")
     train_parser.add_argument("--max_seq_length", type=int, default=1200, help="Maximum sequence length")
     train_parser.add_argument("--num_epochs", type=int, default=1, help="Number of training epochs")
+    train_parser.add_argument("--max_steps", type=int, default=-1, help="Maximum number of training steps (overrides num_epochs if > 0)")
     train_parser.add_argument("--save_steps", type=int, default=2000, help="Save checkpoint every X steps")
     train_parser.add_argument("--logging_steps", type=int, default=100, help="Log every X steps")
     train_parser.add_argument("--eval_steps", type=int, default=1000, help="Evaluate every X steps")

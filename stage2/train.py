@@ -5,10 +5,9 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
 from torch.utils.tensorboard import SummaryWriter
 
+from stage2.model import SiRNAModel
 from stage2.data import InstructionDataset
 
 logger = logging.getLogger(__name__)
@@ -47,89 +46,61 @@ def train(args):
         raise FileNotFoundError(f"base_model_path.txt not found in {stage1_model_dir}")
     base_model_path = base_model_path_file.read_text().strip()
 
-    # Load tokenizer from base model path
-    logger.info(f"Loading tokenizer from base model: {base_model_path}")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path, use_fast=True)
-    tokenizer.pad_token = tokenizer.eos_token
-
-    # Load Stage1 model
-    logger.info(f"Loading Stage1 model from {stage1_model_dir}")
-    model = AutoModelForCausalLM.from_pretrained(
-        stage1_model_dir,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-        device_map="auto",
-        attn_implementation="flash_attention_2",
-    )
-    model.gradient_checkpointing_enable()
-
-    # Prepare model for training
-    model = prepare_model_for_kbit_training(model)
-    lora_config = LoraConfig(
+    # Initialize SiRNAModel 
+    logger.info(f"Initializing model with base model from: {base_model_path}")
+    sirna_model = SiRNAModel(model_name_or_path=stage1_model_dir)
+    
+    # QLoRA 양자화와 함께 모델 로드
+    logger.info("Loading model with QLoRA quantization...")
+    model, tokenizer = sirna_model.load_model(use_4bit=True)
+    
+    # LoRA 파인튜닝 준비
+    logger.info(f"Preparing model for LoRA fine-tuning with r={args.lora_r}, alpha={args.lora_alpha}")
+    sirna_model.prepare_for_training(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        lora_dropout=args.lora_dropout
     )
-    model = get_peft_model(model, lora_config)
-
-    # Load datasets
+    
+    # 데이터셋 로드
+    logger.info(f"Loading train dataset from {args.train_file}")
     train_dataset = InstructionDataset(args.train_file, tokenizer, args.max_seq_length)
+    
+    logger.info(f"Loading validation dataset from {args.val_file}")
     val_dataset = InstructionDataset(args.val_file, tokenizer, args.max_seq_length)
 
     logger.info(f"Train dataset size: {len(train_dataset)}")
     logger.info(f"Validation dataset size: {len(val_dataset)}")
 
-    # Training arguments
-    training_args = TrainingArguments(
-        output_dir=str(output_dir),
-        num_train_epochs=args.num_epochs,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        learning_rate=args.learning_rate,
-        weight_decay=0.01,
-        warmup_ratio=0.1,
-        lr_scheduler_type="cosine",
-        logging_dir=str(metrics_dir),
-        logging_steps=args.logging_steps,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        bf16=True,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
-        report_to="tensorboard",
-        optim="adamw_torch",
-        save_total_limit=1,
-    )
-
-    # Initialize trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-    )
-
-    # Train model
+    # 모델 학습
     start_time = time.time()
     logger.info("Starting training")
-    trainer.train()
+    
+    # max_steps 파라미터 추가
+    max_steps = getattr(args, 'max_steps', -1)
+    logger.info(f"Max steps: {max_steps if max_steps > 0 else '자동 계산됨 (에포크 기반)'}")
+    
+    sirna_model.train(
+        train_dataset=train_dataset,
+        output_dir=str(output_dir),
+        batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        num_train_epochs=args.num_epochs,
+        learning_rate=args.learning_rate,
+        max_steps=max_steps
+    )
 
     end_time = time.time()
     training_time = end_time - start_time
     (metrics_dir / "training_time.txt").write_text(f"Training time: {training_time} seconds\n")
 
-    # Save model and tokenizer
-    trainer.save_model()
-    tokenizer.save_pretrained(str(output_dir))
-    model.peft_config[model.active_adapter].save_pretrained(str(output_dir))
+    # 모델 저장 (이미 train 메서드에서 저장됨)
+    logger.info(f"Model saved to {output_dir}")
+    
+    # 기존 모델 경로 저장
     (output_dir / "base_model_path.txt").write_text(base_model_path)
 
-    # Save training args
+    # 학습 인자 저장
     with (metrics_dir / "training_args.txt").open("w") as f:
         for arg, value in vars(args).items():
             f.write(f"{arg}: {value}\n")
@@ -137,4 +108,4 @@ def train(args):
     logger.info(f"Training completed! Run ID: {run_id}")
     torch.cuda.empty_cache()
 
-    return model
+    return sirna_model.model
