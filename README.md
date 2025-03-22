@@ -26,22 +26,24 @@ python main.py evaluate --stage 1 \
 tensorboard --logdir ./archive/metrics/stage1 --host 0.0.0.0
 ```
 
+- 현재 GPU 100% 쓰는 옵션임 (max_ 옵션 제외)
 ```
 python3 -m main train \
     --stage 2 \
     --train_file data/stage2/only_sirna/train.jsonl \
     --val_file data/stage2/only_sirna/validation.jsonl \
-    --stage1_model_dir archive/models/stage1/2025-03-19T07:52:37 \
-    --batch_size 2 \
+    --stage1_model_dir archive/models/stage1/final_2025-03-21T08:15:23 \
+    --batch_size 6 \
     --gradient_accumulation_steps 20 \
-    --lora_r 64 \
+    --lora_r 128 \
     --lora_alpha 32 \
     --learning_rate 1e-4 \
-    --max_seq_length 1024 \
-    --max_steps 3500 \
+    --max_seq_length 2096 \
+    --max_steps 700 \
     --logging_steps 100 \
-    --gpu_id 1
+    --gpu_id 3
 ```
+
 
 ```
 python main.py evaluate --stage 2 \
